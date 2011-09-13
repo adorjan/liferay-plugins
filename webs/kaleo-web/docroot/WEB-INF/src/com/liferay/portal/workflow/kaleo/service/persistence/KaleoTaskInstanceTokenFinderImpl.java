@@ -24,10 +24,15 @@ import com.liferay.portal.kernel.util.CalendarUtil;
 import com.liferay.portal.kernel.util.StringBundler;
 import com.liferay.portal.kernel.util.StringPool;
 import com.liferay.portal.kernel.util.Validator;
+import com.liferay.portal.model.Group;
 import com.liferay.portal.model.Role;
 import com.liferay.portal.model.User;
+import com.liferay.portal.model.UserGroup;
 import com.liferay.portal.model.UserGroupRole;
+import com.liferay.portal.service.GroupLocalServiceUtil;
+import com.liferay.portal.service.RoleLocalServiceUtil;
 import com.liferay.portal.service.UserGroupRoleLocalServiceUtil;
+import com.liferay.portal.service.UserLocalServiceUtil;
 import com.liferay.portal.service.persistence.impl.BasePersistenceImpl;
 import com.liferay.portal.workflow.kaleo.model.KaleoTaskInstanceToken;
 import com.liferay.portal.workflow.kaleo.util.RoleUtil;
@@ -487,9 +492,25 @@ public class KaleoTaskInstanceTokenFinderImpl
 			List<Long> roleIds = RoleUtil.getRoleIds(
 				kaleoTaskInstanceTokenQuery.getServiceContext());
 
-			List<UserGroupRole >userGroupRoles =
-				UserGroupRoleLocalServiceUtil.getUserGroupRoles(
-					kaleoTaskInstanceTokenQuery.getUserId());
+			User user = UserLocalServiceUtil.getUser(
+				kaleoTaskInstanceTokenQuery.getUserId());
+
+			List<UserGroup> userGroups = user.getUserGroups();
+			List<Group> allGroups = new ArrayList<Group>();
+
+			allGroups.addAll(
+				GroupLocalServiceUtil.getUserGroupsGroups(userGroups));
+			allGroups.addAll(
+				GroupLocalServiceUtil.getUserGroupsRelatedGroups(userGroups));
+
+			List<Role> userGroupRoles = new ArrayList<Role>();
+
+			for (Group group : allGroups) {
+				List<Role> groupRoles = RoleLocalServiceUtil.getGroupRoles(
+					group.getGroupId());
+
+				userGroupRoles.addAll(groupRoles);
+			}
 
 			if (roleIds.isEmpty() && userGroupRoles.isEmpty()) {
 				return StringPool.BLANK;
@@ -514,8 +535,7 @@ public class KaleoTaskInstanceTokenFinderImpl
 			}
 
 			for (int i = 0; i < userGroupRoles.size(); i++) {
-				sb.append("((KaleoTaskAssignmentInstance.groupId = ?) AND ");
-				sb.append("(KaleoTaskAssignmentInstance.assigneeClassPK = ?))");
+				sb.append("(KaleoTaskAssignmentInstance.assigneeClassPK = ?)");
 
 				if ((i + 1) < userGroupRoles.size()) {
 					sb.append(" OR ");
@@ -728,11 +748,18 @@ public class KaleoTaskInstanceTokenFinderImpl
 			List<Long> roleIds = RoleUtil.getRoleIds(
 				kaleoTaskInstanceTokenQuery.getServiceContext());
 
-			List<UserGroupRole >userGroupRoles =
-				UserGroupRoleLocalServiceUtil.getUserGroupRoles(
-					kaleoTaskInstanceTokenQuery.getUserId());
+			User user = UserLocalServiceUtil.getUser(
+				kaleoTaskInstanceTokenQuery.getUserId());
 
-			if (roleIds.isEmpty() && userGroupRoles.isEmpty()) {
+			List<UserGroup> userGroups = user.getUserGroups();
+			List<Group> allGroups = new ArrayList<Group>();
+
+			allGroups.addAll(
+				GroupLocalServiceUtil.getUserGroupsGroups(userGroups));
+			allGroups.addAll(
+				GroupLocalServiceUtil.getUserGroupsRelatedGroups(userGroups));
+
+			if (roleIds.isEmpty() && allGroups.isEmpty()) {
 				return;
 			}
 
@@ -740,9 +767,12 @@ public class KaleoTaskInstanceTokenFinderImpl
 				qPos.add(roleId);
 			}
 
-			for (UserGroupRole userGroupRole : userGroupRoles) {
-				qPos.add(userGroupRole.getGroupId());
-				qPos.add(userGroupRole.getRoleId());
+			for (Group group : allGroups) {
+				long groupId = group.getGroupId();
+
+				for (Role role : RoleLocalServiceUtil.getGroupRoles(groupId)) {
+					qPos.add(role.getRoleId());
+				}
 			}
 		}
 		else {
